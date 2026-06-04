@@ -27,6 +27,7 @@ from cryptography.hazmat.primitives.serialization import load_pem_private_key
 GATEWAY_URL = "ws://127.0.0.1:18789"
 TIMEOUT_SECONDS = 120
 DEVICE_JSON = Path.home() / ".openclaw" / "identity" / "device.json"
+OPENCLAW_CONFIG = Path.home() / ".openclaw" / "openclaw.json"
 logger = logging.getLogger(__name__)
 
 
@@ -40,6 +41,13 @@ def _load_device() -> dict:
         return json.load(f)
 
 
+def _load_gateway_token() -> str:
+    """Read the shared gateway auth token from openclaw.json."""
+    with open(OPENCLAW_CONFIG) as f:
+        config = json.load(f)
+    return config.get("gateway", {}).get("auth", {}).get("token", "")
+
+
 def _sign(private_key_pem: str, payload: str) -> str:
     """Sign a payload string with the Ed25519 private key; return base64."""
     key: Ed25519PrivateKey = load_pem_private_key(private_key_pem.encode(), password=None)
@@ -47,9 +55,9 @@ def _sign(private_key_pem: str, payload: str) -> str:
     return base64.b64encode(sig).decode()
 
 
-def _sig_payload(device_id: str, nonce: str, signed_at: int, scopes: list[str]) -> str:
+def _sig_payload(device_id: str, nonce: str, signed_at: int, scopes: list[str], token: str) -> str:
     """Build the v2 pipe-delimited signing payload for the connect request."""
-    return f"v2|{device_id}|cli|cli|operator|{','.join(scopes)}|{signed_at}||{nonce}"
+    return f"v2|{device_id}|cli|cli|operator|{','.join(scopes)}|{signed_at}|{token}|{nonce}"
 
 
 # ---------------------------------------------------------------------------
@@ -85,8 +93,9 @@ async def _run_async(topic: str, prompt: str) -> dict[str, Any]:
 
     try:
         device = _load_device()
-    except FileNotFoundError:
-        trace["error"] = f"device identity not found at {DEVICE_JSON}"
+        gateway_token = _load_gateway_token()
+    except FileNotFoundError as exc:
+        trace["error"] = f"config file not found: {exc}"
         return _finalise(trace, wall_start)
 
     try:
@@ -106,7 +115,7 @@ async def _run_async(topic: str, prompt: str) -> dict[str, Any]:
             scopes = ["operator.read", "operator.write"]
             device_sig = _sign(
                 device["privateKeyPem"],
-                _sig_payload(device["deviceId"], server_nonce, signed_at, scopes),
+                _sig_payload(device["deviceId"], server_nonce, signed_at, scopes, gateway_token),
             )
 
             # --- send connect -----------------------------------------------
@@ -121,6 +130,7 @@ async def _run_async(topic: str, prompt: str) -> dict[str, Any]:
                 },
                 "role": "operator",
                 "scopes": scopes,
+                "token": gateway_token,
                 "device": {
                     "id": device["deviceId"],
                     "publicKey": device["publicKeyPem"],
