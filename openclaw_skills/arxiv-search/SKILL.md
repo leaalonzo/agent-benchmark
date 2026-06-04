@@ -1,5 +1,5 @@
 ---
-name: arxiv_search
+name: arxiv-search
 description: "Search ArXiv for recent academic papers on a topic. Returns title, authors, abstract, arxiv_id, url, and published date."
 version: 1.0.0
 metadata:

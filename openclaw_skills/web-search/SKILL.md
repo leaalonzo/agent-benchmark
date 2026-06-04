@@ -1,5 +1,5 @@
 ---
-name: web_search
+name: web-search
 description: "Search the web via Brave Search API. Returns title, url, description, and published_date for each result."
 version: 1.0.0
 metadata:

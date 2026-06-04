@@ -1,5 +1,5 @@
 ---
-name: github_search
+name: github-search
 description: "Search GitHub for repositories matching a query, sorted by stars. Returns name, full_name, description, stars, url, language, and updated_at."
 version: 1.0.0
 metadata:
