@@ -17,4 +17,4 @@ input_schema:
       default: 10
   required:
     - topic
-exec: "python3 /workspace/openclaw_skills/handlers/arxiv_search_handler.py {topic} {max_results}"
+exec: "python3 openclaw_skills/handlers/arxiv_search_handler.py {topic} {max_results}"

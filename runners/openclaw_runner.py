@@ -1,8 +1,9 @@
 """
-OpenClaw (Claude Code headless) benchmark runner.
+OpenClaw benchmark runner.
 
-Connects to the OpenClaw WebSocket gateway, submits a benchmark prompt,
-captures the full tool-call trace, and returns a structured result dict.
+Connects to the OpenClaw WebSocket gateway (installed directly on the VPS),
+submits a benchmark prompt, captures the full tool-call trace, and returns
+a structured result dict.
 
 Protocol reference: https://docs.openclaw.ai/gateway/protocol
 """

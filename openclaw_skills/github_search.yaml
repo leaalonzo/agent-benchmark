@@ -23,4 +23,4 @@ input_schema:
       default: 5
   required:
     - query
-exec: "python3 /workspace/openclaw_skills/handlers/github_search_handler.py {query} {max_results}"
+exec: "python3 openclaw_skills/handlers/github_search_handler.py {query} {max_results}"
