@@ -10,6 +10,7 @@ Protocol reference: https://docs.openclaw.ai/gateway/protocol
 import asyncio
 import json
 import logging
+import os
 import time
 import uuid
 from datetime import datetime, timezone
@@ -75,7 +76,7 @@ async def _run_async(topic: str, prompt: str) -> dict[str, Any]:
             session_id = str(uuid.uuid4())
             await ws.send(_req("session.create", {
                 "id": session_id,
-                "model": None,       # let container default (OPENCLAW_MODEL env var)
+                "model": os.environ.get("MODEL", "gpt-4o"),
                 "prompt": prompt,
             }))
 
