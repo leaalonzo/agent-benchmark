@@ -9,20 +9,42 @@ Protocol reference: https://docs.openclaw.ai/gateway/protocol
 """
 
 import asyncio
+import base64
 import json
 import logging
 import os
 import time
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 import websockets
 import websockets.exceptions
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.serialization import load_pem_private_key
 
 GATEWAY_URL = "ws://127.0.0.1:18789"
 TIMEOUT_SECONDS = 120
+DEVICE_JSON = Path.home() / ".openclaw" / "identity" / "device.json"
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Device identity helpers
+# ---------------------------------------------------------------------------
+
+def _load_device() -> dict:
+    """Read device id and private key from OpenClaw's local identity file."""
+    with open(DEVICE_JSON) as f:
+        return json.load(f)
+
+
+def _sign(private_key_pem: str, nonce: str) -> str:
+    """Sign a nonce string with the Ed25519 private key; return base64."""
+    key: Ed25519PrivateKey = load_pem_private_key(private_key_pem.encode(), password=None)
+    sig = key.sign(nonce.encode())
+    return base64.b64encode(sig).decode()
 
 
 # ---------------------------------------------------------------------------
@@ -57,20 +79,48 @@ async def _run_async(topic: str, prompt: str) -> dict[str, Any]:
     wall_start = time.monotonic()
 
     try:
+        device = _load_device()
+    except FileNotFoundError:
+        trace["error"] = f"device identity not found at {DEVICE_JSON}"
+        return _finalise(trace, wall_start)
+
+    try:
         async with websockets.connect(GATEWAY_URL, open_timeout=10) as ws:
 
-            # --- handshake -------------------------------------------------
+            # --- send connect -----------------------------------------------
             await ws.send(_req("connect", {
                 "minProtocol": 3,
                 "maxProtocol": 4,
-                "client": {"id": "benchmark", "version": "1.0.0", "platform": "linux", "mode": "operator"},
+                "client": {
+                    "id": "benchmark",
+                    "version": "1.0.0",
+                    "platform": "linux",
+                    "mode": "operator",
+                },
                 "role": "operator",
                 "scopes": ["operator.read", "operator.write"],
+                "device": {
+                    "id": device["deviceId"],
+                    "publicKey": device["publicKeyPem"],
+                },
             }))
-            hello = json.loads(await asyncio.wait_for(ws.recv(), timeout=15))
-            if not hello.get("ok"):
+
+            # --- handle challenge-response ----------------------------------
+            msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=15))
+
+            if msg.get("event") == "connect.challenge":
+                nonce = msg["payload"]["nonce"]
+                signature = _sign(device["privateKeyPem"], nonce)
+                await ws.send(_req("connect.respond", {
+                    "nonce": nonce,
+                    "deviceId": device["deviceId"],
+                    "signature": signature,
+                }))
+                msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=15))
+
+            if not msg.get("ok"):
                 trace["status"] = "error"
-                trace["error"] = f"handshake failed: {hello}"
+                trace["error"] = f"handshake failed: {msg}"
                 return _finalise(trace, wall_start)
 
             # --- create session --------------------------------------------
@@ -82,7 +132,7 @@ async def _run_async(topic: str, prompt: str) -> dict[str, Any]:
             }))
 
             # --- event loop -----------------------------------------------
-            tool_call_buffer: dict[str, dict] = {}   # call_id -> in-flight tool call
+            tool_call_buffer: dict[str, dict] = {}
 
             async def recv_loop():
                 async for raw in ws:
@@ -90,7 +140,6 @@ async def _run_async(topic: str, prompt: str) -> dict[str, Any]:
                     trace["raw_events"].append(event)
                     etype = event.get("event", event.get("type", ""))
 
-                    # --- tool call started ---------------------------------
                     if etype == "session.tool":
                         payload = event.get("payload", {})
                         tool_type = payload.get("type")
@@ -124,25 +173,20 @@ async def _run_async(topic: str, prompt: str) -> dict[str, Any]:
                                     "duration_seconds": None,
                                 })
 
-                    # --- token / response metadata ------------------------
                     elif etype == "session.message":
                         payload = event.get("payload", {})
                         usage = payload.get("usage") or {}
                         if usage:
                             trace["tokens"]["input"] += usage.get("input_tokens", 0)
                             trace["tokens"]["output"] += usage.get("output_tokens", 0)
-                        # capture final text content
                         for block in payload.get("content", []):
                             if isinstance(block, dict) and block.get("type") == "text":
                                 trace["final_response"] = block.get("text", "")
 
-                    # --- session done -------------------------------------
                     elif etype in ("session.complete", "session.stop", "session.done"):
-                        payload = event.get("payload", {})
-                        trace["status"] = payload.get("status", "complete")
+                        trace["status"] = event.get("payload", {}).get("status", "complete")
                         return
 
-                    # --- errors -------------------------------------------
                     elif etype == "session.error":
                         trace["status"] = "error"
                         trace["error"] = event.get("payload", {}).get("message", "unknown error")

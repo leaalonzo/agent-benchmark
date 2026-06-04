@@ -1,5 +1,6 @@
 certifi>=2024.0      # SSL certs for urllib on macOS
 websockets>=12.0     # OpenClaw gateway WebSocket client
+cryptography>=42.0   # Ed25519 signing for OpenClaw gateway handshake
 flask>=3.0
 python-dotenv>=1.0
 anthropic>=0.40
