@@ -88,20 +88,23 @@ async def _run_async(topic: str, prompt: str) -> dict[str, Any]:
         async with websockets.connect(GATEWAY_URL, open_timeout=10) as ws:
 
             # --- send connect -----------------------------------------------
+            # Sign the device ID to prove private key ownership on initial connect
+            device_sig = _sign(device["privateKeyPem"], device["deviceId"])
             await ws.send(_req("connect", {
                 "minProtocol": 3,
                 "maxProtocol": 4,
                 "client": {
-                    "id": "benchmark",
+                    "id": "cli",
                     "version": "1.0.0",
                     "platform": "linux",
-                    "mode": "operator",
+                    "mode": "headless",
                 },
                 "role": "operator",
                 "scopes": ["operator.read", "operator.write"],
                 "device": {
                     "id": device["deviceId"],
                     "publicKey": device["publicKeyPem"],
+                    "signature": device_sig,
                 },
             }))
 
