@@ -40,11 +40,16 @@ def _load_device() -> dict:
         return json.load(f)
 
 
-def _sign(private_key_pem: str, nonce: str) -> str:
-    """Sign a nonce string with the Ed25519 private key; return base64."""
+def _sign(private_key_pem: str, payload: str) -> str:
+    """Sign a payload string with the Ed25519 private key; return base64."""
     key: Ed25519PrivateKey = load_pem_private_key(private_key_pem.encode(), password=None)
-    sig = key.sign(nonce.encode())
+    sig = key.sign(payload.encode())
     return base64.b64encode(sig).decode()
+
+
+def _sig_payload(device_id: str, nonce: str, signed_at: int, scopes: list[str]) -> str:
+    """Build the v2 pipe-delimited signing payload for the connect request."""
+    return f"v2|{device_id}|cli|cli|operator|{','.join(scopes)}|{signed_at}||{nonce}"
 
 
 # ---------------------------------------------------------------------------
@@ -98,7 +103,11 @@ async def _run_async(topic: str, prompt: str) -> dict[str, Any]:
 
             server_nonce = challenge["payload"]["nonce"]
             signed_at = challenge["payload"]["ts"]
-            device_sig = _sign(device["privateKeyPem"], server_nonce)
+            scopes = ["operator.read", "operator.write"]
+            device_sig = _sign(
+                device["privateKeyPem"],
+                _sig_payload(device["deviceId"], server_nonce, signed_at, scopes),
+            )
 
             # --- send connect -----------------------------------------------
             await ws.send(_req("connect", {
@@ -111,7 +120,7 @@ async def _run_async(topic: str, prompt: str) -> dict[str, Any]:
                     "mode": "cli",
                 },
                 "role": "operator",
-                "scopes": ["operator.read", "operator.write"],
+                "scopes": scopes,
                 "device": {
                     "id": device["deviceId"],
                     "publicKey": device["publicKeyPem"],
