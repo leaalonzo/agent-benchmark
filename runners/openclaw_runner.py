@@ -87,14 +87,20 @@ async def _run_async(topic: str, prompt: str) -> dict[str, Any]:
     try:
         async with websockets.connect(GATEWAY_URL, open_timeout=10) as ws:
 
+            # --- wait for gateway challenge ---------------------------------
+            # Gateway sends connect.challenge first; client signs the server
+            # nonce and echoes it back in the connect request.
+            challenge = json.loads(await asyncio.wait_for(ws.recv(), timeout=15))
+            if challenge.get("event") != "connect.challenge":
+                trace["status"] = "error"
+                trace["error"] = f"expected connect.challenge, got: {challenge}"
+                return _finalise(trace, wall_start)
+
+            server_nonce = challenge["payload"]["nonce"]
+            signed_at = challenge["payload"]["ts"]
+            device_sig = _sign(device["privateKeyPem"], server_nonce)
+
             # --- send connect -----------------------------------------------
-            # Sign deviceId:nonce:signedAt to prove private key ownership
-            signed_at = int(time.time() * 1000)
-            device_nonce = str(uuid.uuid4())
-            device_sig = _sign(
-                device["privateKeyPem"],
-                f"{device['deviceId']}:{device_nonce}:{signed_at}",
-            )
             await ws.send(_req("connect", {
                 "minProtocol": 3,
                 "maxProtocol": 4,
@@ -102,7 +108,7 @@ async def _run_async(topic: str, prompt: str) -> dict[str, Any]:
                     "id": "cli",
                     "version": "1.0.0",
                     "platform": "linux",
-                    "mode": "interactive",
+                    "mode": "cli",
                 },
                 "role": "operator",
                 "scopes": ["operator.read", "operator.write"],
@@ -111,23 +117,12 @@ async def _run_async(topic: str, prompt: str) -> dict[str, Any]:
                     "publicKey": device["publicKeyPem"],
                     "signature": device_sig,
                     "signedAt": signed_at,
-                    "nonce": device_nonce,
+                    "nonce": server_nonce,
                 },
             }))
 
-            # --- handle challenge-response ----------------------------------
+            # --- await success ----------------------------------------------
             msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=15))
-
-            if msg.get("event") == "connect.challenge":
-                nonce = msg["payload"]["nonce"]
-                signature = _sign(device["privateKeyPem"], nonce)
-                await ws.send(_req("connect.respond", {
-                    "nonce": nonce,
-                    "deviceId": device["deviceId"],
-                    "signature": signature,
-                }))
-                msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=15))
-
             if not msg.get("ok"):
                 trace["status"] = "error"
                 trace["error"] = f"handshake failed: {msg}"
