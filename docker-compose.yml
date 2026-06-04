@@ -1,0 +1,17 @@
+services:
+  openclaw:
+    image: ghcr.io/openclaw/openclaw:latest
+    container_name: openclaw_benchmark
+    ports:
+      - "18789:18789"
+    volumes:
+      - ./openclaw_skills:/workspace/openclaw_skills:ro
+      - ./tools:/workspace/tools:ro
+    working_dir: /workspace
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      OPENCLAW_MODEL: ${OPENCLAW_MODEL:-claude-opus-4-6}
+      BRAVE_API_KEY: ${BRAVE_API_KEY:-}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      PYTHONPATH: /workspace
+    restart: unless-stopped

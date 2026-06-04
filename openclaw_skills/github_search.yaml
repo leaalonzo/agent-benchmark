@@ -1,0 +1,26 @@
+name: github_search
+description: "Search GitHub for repositories matching a query, sorted by stars. Returns name, full_name, description, stars, url, language, and updated_at."
+version: "1.0.0"
+metadata:
+  openclaw:
+    emoji: "🐙"
+    requires:
+      env:
+        - GITHUB_TOKEN
+    envVars:
+      - name: GITHUB_TOKEN
+        required: false
+        description: "GitHub personal access token (unauthenticated works at 10 req/min)"
+input_schema:
+  type: object
+  properties:
+    query:
+      type: string
+      description: "The repository search query"
+    max_results:
+      type: integer
+      description: "Maximum number of repositories to return (default 5)"
+      default: 5
+  required:
+    - query
+exec: "python3 /workspace/openclaw_skills/handlers/github_search_handler.py {query} {max_results}"
