@@ -130,6 +130,7 @@ async def _run_async(topic: str, prompt: str) -> dict[str, Any]:
                 },
                 "role": "operator",
                 "scopes": scopes,
+                "auth": {"token": gateway_token},
                 "device": {
                     "id": device["deviceId"],
                     "publicKey": device["publicKeyPem"],
