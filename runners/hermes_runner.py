@@ -99,7 +99,7 @@ def _export_session(run_start_ts: float) -> tuple[list[dict], dict]:
     for msg in messages:
         if msg.get("role") != "assistant":
             continue
-        for tc in msg.get("tool_calls", []):
+        for tc in msg.get("tool_calls") or []:
             fn = tc.get("function", {})
             call_id = tc.get("id", tc.get("call_id", ""))
             try:
