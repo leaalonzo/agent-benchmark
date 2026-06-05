@@ -92,8 +92,7 @@ def _extract_section(text: str, header: str) -> str:
     Handles formats: **PAPERS**, ## PAPERS, 1. PAPERS, PAPERS:
     """
     prefix = r"(?:#+\s*|[*_]{1,2}|\d+\.\s*)?"
-    suffix = r"[*_]{0,2}[:\s]*"
-    pattern = rf"(?:^|\n){prefix}{re.escape(header)}{suffix}\n(.*?)(?=\n{prefix}(?:PAPERS|REPOS|WEB|SYNTHESIS){suffix}\n|\Z)"
+    pattern = rf"(?:^|\n){prefix}{re.escape(header)}[^\n]*\n(.*?)(?=\n{prefix}(?:PAPERS|REPOS|WEB|SYNTHESIS)[^\n]*\n|\Z)"
     m = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
     return m.group(1).strip() if m else ""
 
