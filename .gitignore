@@ -16,6 +16,9 @@ venv/
 dist/
 build/
 
+# drafts
+drafts/
+
 # editor
 .DS_Store
 .idea/
