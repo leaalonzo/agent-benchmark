@@ -25,7 +25,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 
 GATEWAY_URL = "ws://127.0.0.1:18789"
-TIMEOUT_SECONDS = 120
+TIMEOUT_SECONDS = 300
 DEVICE_JSON = Path.home() / ".openclaw" / "identity" / "device.json"
 OPENCLAW_CONFIG = Path.home() / ".openclaw" / "openclaw.json"
 logger = logging.getLogger(__name__)
