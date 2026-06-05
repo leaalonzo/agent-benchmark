@@ -147,12 +147,11 @@ async def _run_async(topic: str, prompt: str) -> dict[str, Any]:
                 trace["error"] = f"handshake failed: {msg}"
                 return _finalise(trace, wall_start)
 
-            # --- create session --------------------------------------------
-            session_id = str(uuid.uuid4())
-            await ws.send(_req("session.create", {
-                "id": session_id,
-                "model": os.environ.get("MODEL", "gpt-4o"),
-                "prompt": prompt,
+            # --- send message ----------------------------------------------
+            await ws.send(_req("chat.send", {
+                "sessionKey": "main",
+                "message": prompt,
+                "idempotencyKey": str(uuid.uuid4()),
             }))
 
             # --- event loop -----------------------------------------------
@@ -164,7 +163,7 @@ async def _run_async(topic: str, prompt: str) -> dict[str, Any]:
                     trace["raw_events"].append(event)
                     etype = event.get("event", event.get("type", ""))
 
-                    if etype == "session.tool":
+                    if etype in ("chat.tool", "session.tool"):
                         payload = event.get("payload", {})
                         tool_type = payload.get("type")
 
@@ -197,7 +196,7 @@ async def _run_async(topic: str, prompt: str) -> dict[str, Any]:
                                     "duration_seconds": None,
                                 })
 
-                    elif etype == "session.message":
+                    elif etype in ("chat.message", "session.message"):
                         payload = event.get("payload", {})
                         usage = payload.get("usage") or {}
                         if usage:
@@ -207,11 +206,12 @@ async def _run_async(topic: str, prompt: str) -> dict[str, Any]:
                             if isinstance(block, dict) and block.get("type") == "text":
                                 trace["final_response"] = block.get("text", "")
 
-                    elif etype in ("session.complete", "session.stop", "session.done"):
+                    elif etype in ("chat.complete", "chat.done", "chat.stop",
+                                   "session.complete", "session.stop", "session.done"):
                         trace["status"] = event.get("payload", {}).get("status", "complete")
                         return
 
-                    elif etype == "session.error":
+                    elif etype in ("chat.error", "session.error"):
                         trace["status"] = "error"
                         trace["error"] = event.get("payload", {}).get("message", "unknown error")
                         return
