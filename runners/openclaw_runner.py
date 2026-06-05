@@ -148,15 +148,18 @@ async def _run_async(topic: str, prompt: str) -> dict[str, Any]:
                 return _finalise(trace, wall_start)
 
             # --- send message ----------------------------------------------
+            msg_id = str(uuid.uuid4())
             await ws.send(_req("chat.send", {
                 "sessionKey": "main",
                 "message": prompt,
-                "idempotencyKey": str(uuid.uuid4()),
+                "idempotencyKey": msg_id,
             }))
 
             # --- event loop -----------------------------------------------
             tool_call_buffer: dict[str, dict] = {}
             item_start_ts: dict[str, int] = {}  # itemId → start ts (ms)
+            run_id: str = ""
+            session_id: str = ""
 
             async def recv_loop():
                 async for raw in ws:
@@ -164,7 +167,10 @@ async def _run_async(topic: str, prompt: str) -> dict[str, Any]:
                     trace["raw_events"].append(event)
                     etype = event.get("event", event.get("type", ""))
 
-                    if etype == "chat":
+                    if etype == "res" and event.get("ok"):
+                        run_id = event.get("payload", {}).get("runId", run_id)
+
+                    elif etype == "chat":
                         payload = event.get("payload", {})
                         delta = payload.get("deltaText", "")
                         if delta:
@@ -229,6 +235,10 @@ async def _run_async(topic: str, prompt: str) -> dict[str, Any]:
                         stream = payload.get("stream", "")
                         phase = data.get("phase", "")
                         ts_ms = payload.get("ts", 0)
+                        if not run_id:
+                            run_id = payload.get("runId", "")
+                        if not session_id:
+                            session_id = payload.get("sessionId", "")
 
                         if stream == "item" and phase == "start" and data.get("kind") in ("tool", "search", "command"):
                             item_id = data.get("itemId", "")
@@ -264,6 +274,27 @@ async def _run_async(topic: str, prompt: str) -> dict[str, Any]:
             except asyncio.TimeoutError:
                 trace["status"] = "timeout"
                 logger.warning("OpenClaw session timed out after %ss", TIMEOUT_SECONDS)
+
+            # --- read token counts from trajectory file --------------------
+            if run_id and session_id:
+                traj = (Path.home() / ".openclaw" / "agents" / "main" / "sessions"
+                        / f"{session_id}.trajectory.jsonl")
+                if traj.exists():
+                    try:
+                        in_tok = out_tok = 0
+                        for line in traj.read_text().splitlines():
+                            try:
+                                e = json.loads(line)
+                            except json.JSONDecodeError:
+                                continue
+                            if e.get("type") == "model.completed" and e.get("runId") == run_id:
+                                usage = e.get("data", {}).get("usage", {})
+                                in_tok  += usage.get("input", 0) or 0
+                                out_tok += usage.get("output", 0) or 0
+                        if in_tok or out_tok:
+                            trace["tokens"] = {"input": in_tok, "output": out_tok}
+                    except Exception as exc:
+                        logger.warning("Could not read trajectory tokens: %s", exc)
 
     except (ConnectionRefusedError, OSError) as exc:
         trace["status"] = "error"
