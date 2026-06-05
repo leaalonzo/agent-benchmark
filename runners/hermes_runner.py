@@ -6,7 +6,7 @@ exports the last session to extract tool call traces.
 
 Prerequisites (run on VPS):
   hermes mcp add benchmark-tools --command "python3 /root/agent-benchmark/tools/mcp_server.py"
-  hermes config set model gpt-4o
+  hermes config set model gpt-5.5
   hermes config set memory.memory_enabled false
 """
 
