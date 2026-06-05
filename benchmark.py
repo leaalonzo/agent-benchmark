@@ -87,8 +87,13 @@ def build_prompt(topic: str) -> str:
 # ---------------------------------------------------------------------------
 
 def _extract_section(text: str, header: str) -> str:
-    """Return the text of a named section (case-insensitive)."""
-    pattern = rf"(?:^|\n)(?:#+\s*|[*_]{{1,2}})?{re.escape(header)}[*_]{{0,2}}[:\s]*\n(.*?)(?=\n(?:#+\s*|[*_]{{1,2}})?(?:PAPERS|REPOS|WEB|SYNTHESIS)[*_]{{0,2}}[:\s]*\n|\Z)"
+    """Return the text of a named section (case-insensitive).
+
+    Handles formats: **PAPERS**, ## PAPERS, 1. PAPERS, PAPERS:
+    """
+    prefix = r"(?:#+\s*|[*_]{1,2}|\d+\.\s*)?"
+    suffix = r"[*_]{0,2}[:\s]*"
+    pattern = rf"(?:^|\n){prefix}{re.escape(header)}{suffix}\n(.*?)(?=\n{prefix}(?:PAPERS|REPOS|WEB|SYNTHESIS){suffix}\n|\Z)"
     m = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
     return m.group(1).strip() if m else ""
 
