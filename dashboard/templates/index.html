@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent Benchmark</title>
+<style>
+  :root {
+    --oc: #80aaff;
+    --h: #00c896;
+    --bg: #0d0f14;
+    --surface: #161a22;
+    --border: #2a2f3d;
+    --text: #d4d8e8;
+    --muted: #6b7390;
+    --mono: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--mono); font-size: 13px; line-height: 1.6; }
+  a { color: var(--oc); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .header { padding: 24px 32px 16px; border-bottom: 1px solid var(--border); }
+  .header h1 { font-size: 18px; font-weight: 600; letter-spacing: 0.02em; }
+  .header .meta { color: var(--muted); font-size: 11px; margin-top: 4px; }
+
+  .layout { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--border); }
+  .col { background: var(--surface); padding: 20px 24px; }
+  .col.oc .agent-label { color: var(--oc); }
+  .col.h  .agent-label { color: var(--h); }
+  .agent-label { font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 12px; display: block; }
+
+  section { margin: 0 0 32px; }
+  section:last-child { margin-bottom: 0; }
+  .section-title { font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--border); padding-bottom: 6px; margin-bottom: 14px; }
+
+  /* Metrics */
+  .metrics-grid { display: grid; grid-template-columns: 160px 1fr 1fr; gap: 0; }
+  .metrics-grid .mh { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; padding: 6px 0; border-bottom: 1px solid var(--border); }
+  .metrics-grid .mh.oc { color: var(--oc); }
+  .metrics-grid .mh.h  { color: var(--h); }
+  .metric-row { display: contents; }
+  .metric-row > div { padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
+  .metric-row > div:first-child { color: var(--muted); font-size: 11px; }
+  .metric-row > div.better { font-weight: 700; }
+  .badge { display: inline-block; padding: 1px 7px; border-radius: 3px; font-size: 10px; font-weight: 700; letter-spacing: 0.05em; }
+  .badge.complete { background: #1a3a2a; color: #00c896; }
+  .badge.timeout  { background: #3a2a10; color: #e0a030; }
+  .badge.error    { background: #3a1a1a; color: #e05050; }
+  .badge.na       { background: var(--border); color: var(--muted); }
+
+  /* Tool calls */
+  .timeline { list-style: none; }
+  .timeline li { display: flex; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--border); align-items: flex-start; }
+  .timeline li:last-child { border-bottom: none; }
+  .seq { font-size: 10px; color: var(--muted); min-width: 20px; padding-top: 1px; }
+  .tool-info { flex: 1; min-width: 0; }
+  .tool-name { font-size: 12px; font-weight: 600; }
+  .tool-meta { font-size: 10px; color: var(--muted); margin-top: 2px; }
+  .dur { font-size: 10px; color: var(--muted); white-space: nowrap; }
+
+  details summary { cursor: pointer; font-size: 10px; color: var(--muted); margin-top: 3px; user-select: none; }
+  details summary:hover { color: var(--text); }
+  details pre { background: var(--bg); border: 1px solid var(--border); border-radius: 3px; padding: 8px; font-size: 10px; margin-top: 4px; white-space: pre-wrap; word-break: break-all; color: var(--text); max-height: 160px; overflow-y: auto; }
+
+  /* Output sections */
+  .output-section { margin-bottom: 24px; }
+  .output-section h3 { font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+  .output-section ul { list-style: none; }
+  .output-section ul li { padding: 4px 0; border-bottom: 1px solid var(--border); font-size: 11px; line-height: 1.5; }
+  .output-section ul li:last-child { border-bottom: none; }
+  .count-badge { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 1px 7px; font-size: 10px; color: var(--muted); margin-left: 6px; }
+
+  /* Synthesis */
+  .synthesis-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--border); }
+  .synth-col { background: var(--surface); padding: 16px 20px; }
+  .synth-label { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 10px; }
+  .synth-label.oc { color: var(--oc); }
+  .synth-label.h  { color: var(--h); }
+  .synth-text { font-size: 12px; line-height: 1.7; color: var(--text); white-space: pre-wrap; }
+
+  .not-run { color: var(--muted); font-style: italic; padding: 40px 0; text-align: center; }
+
+  .full-layout { padding: 0 32px 40px; }
+  .run-meta { padding: 16px 0; color: var(--muted); font-size: 11px; border-bottom: 1px solid var(--border); margin-bottom: 32px; }
+</style>
+</head>
+<body>
+
+{% set has_oc = openclaw is not none %}
+{% set has_h  = hermes is not none %}
+{% set topic  = (openclaw.topic if has_oc else (hermes.topic if has_h else "—")) %}
+{% set ts_oc  = openclaw.end_time[:19].replace("T", " ") if has_oc else "—" %}
+{% set ts_h   = hermes.end_time[:19].replace("T", " ")  if has_h  else "—" %}
+
+<div class="header">
+  <h1>Agent Benchmark</h1>
+  <div class="meta">Topic: {{ topic }} &nbsp;·&nbsp; OpenClaw ran: {{ ts_oc }} &nbsp;·&nbsp; Hermes ran: {{ ts_h }}</div>
+</div>
+
+<div class="full-layout">
+
+  {# ── Metrics ─────────────────────────────── #}
+  <section style="margin-top:28px; margin-bottom:36px;">
+    <div class="section-title">Metrics</div>
+    <div class="metrics-grid">
+      <div class="mh"></div>
+      <div class="mh oc">OpenClaw</div>
+      <div class="mh h">Hermes</div>
+
+      {% set oc_tc = openclaw.tool_call_count if has_oc else none %}
+      {% set h_tc  = hermes.tool_call_count   if has_h  else none %}
+      <div class="metric-row">
+        <div>Tool calls</div>
+        <div {% if oc_tc is not none and h_tc is not none and oc_tc <= h_tc %}class="better"{% endif %}>{{ oc_tc if oc_tc is not none else "—" }}</div>
+        <div {% if h_tc  is not none and oc_tc is not none and h_tc  <= oc_tc %}class="better"{% endif %}>{{ h_tc  if h_tc  is not none else "—" }}</div>
+      </div>
+
+      {% set oc_in = openclaw.total_input_tokens  if has_oc else none %}
+      {% set h_in  = hermes.total_input_tokens    if has_h  else none %}
+      <div class="metric-row">
+        <div>Input tokens</div>
+        <div {% if oc_in is not none and h_in is not none and oc_in > 0 and oc_in <= h_in %}class="better"{% endif %}>{{ oc_in if (oc_in is not none and oc_in > 0) else "—" }}</div>
+        <div {% if h_in  is not none and oc_in is not none and h_in  > 0 and h_in  <= oc_in %}class="better"{% endif %}>{{ h_in  if (h_in  is not none and h_in  > 0) else "—" }}</div>
+      </div>
+
+      {% set oc_w = openclaw.wall_clock_seconds if has_oc else none %}
+      {% set h_w  = hermes.wall_clock_seconds   if has_h  else none %}
+      <div class="metric-row">
+        <div>Wall clock (s)</div>
+        <div {% if oc_w is not none and h_w is not none and oc_w <= h_w %}class="better"{% endif %}>{{ "%.1f"|format(oc_w) if oc_w is not none else "—" }}</div>
+        <div {% if h_w  is not none and oc_w is not none and h_w  <= oc_w %}class="better"{% endif %}>{{ "%.1f"|format(h_w)  if h_w  is not none else "—" }}</div>
+      </div>
+
+      {% macro count_of(trace, key) %}{% if trace is not none %}{{ trace.output[key]|length }}{% else %}—{% endif %}{% endmacro %}
+      <div class="metric-row"><div>Papers found</div><div>{{ count_of(openclaw, "papers") }}</div><div>{{ count_of(hermes, "papers") }}</div></div>
+      <div class="metric-row"><div>Repos found</div> <div>{{ count_of(openclaw, "repos")  }}</div><div>{{ count_of(hermes, "repos")  }}</div></div>
+      <div class="metric-row"><div>Web results</div>  <div>{{ count_of(openclaw, "web")    }}</div><div>{{ count_of(hermes, "web")    }}</div></div>
+
+      <div class="metric-row">
+        <div>Status</div>
+        <div>{% if has_oc %}<span class="badge {{ openclaw.status }}">{{ openclaw.status }}</span>{% else %}—{% endif %}</div>
+        <div>{% if has_h  %}<span class="badge {{ hermes.status  }}">{{ hermes.status  }}</span>{% else %}—{% endif %}</div>
+      </div>
+    </div>
+  </section>
+
+  {# ── Tool call timelines ──────────────────── #}
+  <section style="margin-bottom:36px;">
+    <div class="section-title">Tool Call Timelines</div>
+    <div class="layout">
+      {% for agent, trace, cls in [("OpenClaw", openclaw, "oc"), ("Hermes", hermes, "h")] %}
+      <div class="col {{ cls }}">
+        <span class="agent-label">{{ agent }}</span>
+        {% if trace is none %}
+          <div class="not-run">Not yet run</div>
+        {% elif trace.tool_calls|length == 0 %}
+          <div class="not-run">No tool calls captured</div>
+        {% else %}
+          <ul class="timeline">
+          {% for tc in trace.tool_calls %}
+            <li>
+              <span class="seq">{{ tc.sequence }}</span>
+              <div class="tool-info">
+                <div class="tool-name">{{ tc.tool_name }}</div>
+                <div class="tool-meta">
+                  {% if tc.result_count is not none %}{{ tc.result_count }} result{% if tc.result_count != 1 %}s{% endif %}{% endif %}
+                </div>
+                {% if tc.args %}
+                <details>
+                  <summary>args</summary>
+                  <pre>{{ tc.args | tojson(indent=2) }}</pre>
+                </details>
+                {% endif %}
+                {% if tc.result_summary %}
+                <details>
+                  <summary>result preview</summary>
+                  <pre>{{ tc.result_summary }}</pre>
+                </details>
+                {% endif %}
+              </div>
+              <span class="dur">{% if tc.duration_ms is not none %}{{ tc.duration_ms }}ms{% endif %}</span>
+            </li>
+          {% endfor %}
+          </ul>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  {# ── Output sections ──────────────────────── #}
+  {% for key, label in [("papers", "Papers"), ("repos", "Repos"), ("web", "Web")] %}
+  <section style="margin-bottom:36px;">
+    <div class="section-title">{{ label }}</div>
+    <div class="layout">
+      {% for agent, trace, cls in [("OpenClaw", openclaw, "oc"), ("Hermes", hermes, "h")] %}
+      <div class="col {{ cls }}">
+        <span class="agent-label">{{ agent }} <span class="count-badge">{{ trace.output[key]|length if trace else 0 }}</span></span>
+        {% if trace is none %}
+          <div class="not-run">Not yet run</div>
+        {% elif trace.output[key]|length == 0 %}
+          <div class="not-run">None found</div>
+        {% else %}
+          <ul>
+          {% for item in trace.output[key] %}
+            <li>{{ item }}</li>
+          {% endfor %}
+          </ul>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+  {% endfor %}
+
+  {# ── Synthesis ────────────────────────────── #}
+  <section>
+    <div class="section-title">Synthesis</div>
+    <div class="synthesis-layout">
+      {% for agent, trace, cls in [("OpenClaw", openclaw, "oc"), ("Hermes", hermes, "h")] %}
+      <div class="synth-col">
+        <div class="synth-label {{ cls }}">{{ agent }}</div>
+        {% if trace is none %}
+          <div class="not-run">Not yet run</div>
+        {% elif trace.output.synthesis %}
+          <div class="synth-text">{{ trace.output.synthesis }}</div>
+        {% else %}
+          <div class="not-run">Not captured</div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+</div>
+</body>
+</html>
