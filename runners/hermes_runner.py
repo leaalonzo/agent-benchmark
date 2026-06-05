@@ -61,23 +61,21 @@ def _export_session(run_start_ts: float) -> tuple[list[dict], dict]:
     finally:
         os.unlink(tmp.name)
 
-    # Find the session that started closest to (and after) run_start_ts
-    best: dict | None = None
+    # Find the most recently started session
+    sessions = []
     for line in lines:
         line = line.strip()
         if not line:
             continue
         try:
-            session = json.loads(line)
+            sessions.append(json.loads(line))
         except json.JSONDecodeError:
             continue
-        started = session.get("started_at", "")
-        if started and started >= _ts_to_iso(run_start_ts):
-            if best is None or session["started_at"] > best["started_at"]:
-                best = session
 
-    if best is None:
+    if not sessions:
         return [], {}
+
+    best = max(sessions, key=lambda s: s.get("started_at", ""))
 
     tokens = {
         "input": best.get("input_tokens", 0) or 0,
@@ -119,8 +117,6 @@ def _export_session(run_start_ts: float) -> tuple[list[dict], dict]:
     return tool_calls, tokens
 
 
-def _ts_to_iso(ts: float) -> str:
-    return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
 
 
 def run_hermes_session(topic: str, prompt: str) -> dict[str, Any]:
