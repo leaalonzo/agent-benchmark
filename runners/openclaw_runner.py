@@ -162,6 +162,7 @@ async def _run_async(topic: str, prompt: str) -> dict[str, Any]:
             session_id: str = ""
 
             async def recv_loop():
+                nonlocal run_id, session_id
                 async for raw in ws:
                     event = json.loads(raw)
                     trace["raw_events"].append(event)
