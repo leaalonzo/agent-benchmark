@@ -112,7 +112,7 @@ async def _run_async(topic: str, prompt: str) -> dict[str, Any]:
 
             server_nonce = challenge["payload"]["nonce"]
             signed_at = challenge["payload"]["ts"]
-            scopes = ["operator.read", "operator.write"]
+            scopes = ["operator.read", "operator.write", "operator.admin"]
             device_sig = _sign(
                 device["privateKeyPem"],
                 _sig_payload(device["deviceId"], server_nonce, signed_at, scopes, gateway_token),
