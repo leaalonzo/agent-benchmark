@@ -163,7 +163,13 @@ async def _run_async(topic: str, prompt: str) -> dict[str, Any]:
                     trace["raw_events"].append(event)
                     etype = event.get("event", event.get("type", ""))
 
-                    if etype in ("chat.tool", "session.tool"):
+                    if etype == "chat":
+                        payload = event.get("payload", {})
+                        delta = payload.get("deltaText", "")
+                        if delta:
+                            trace["final_response"] += delta
+
+                    elif etype in ("chat.tool", "session.tool"):
                         payload = event.get("payload", {})
                         tool_type = payload.get("type")
 
