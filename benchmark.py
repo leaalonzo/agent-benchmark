@@ -98,12 +98,19 @@ def _extract_section(text: str, header: str) -> str:
 
 
 def _count_list_items(section_text: str) -> list[str]:
-    """Return non-empty lines that look like list items."""
-    items = []
+    """Return list items, merging continuation lines (indented sub-lines) into each item."""
+    items: list[str] = []
+    current: str | None = None
     for line in section_text.splitlines():
-        line = line.strip()
-        if re.match(r"^(\d+[.)]\s|\*\s|-\s|•\s)", line) and len(line) > 5:
-            items.append(line)
+        stripped = line.strip()
+        if re.match(r"^(\d+[.)]\s|\*\s|-\s|•\s)", stripped) and len(stripped) > 5:
+            if current is not None:
+                items.append(current)
+            current = stripped
+        elif current is not None and stripped:
+            current = current + " " + stripped
+    if current is not None:
+        items.append(current)
     return items
 
 
