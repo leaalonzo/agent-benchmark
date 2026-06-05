@@ -216,6 +216,23 @@ async def _run_async(topic: str, prompt: str) -> dict[str, Any]:
                         trace["error"] = event.get("payload", {}).get("message", "unknown error")
                         return
 
+                    elif etype == "agent":
+                        data = event.get("payload", {}).get("data", {})
+                        stream = event.get("payload", {}).get("stream", "")
+                        phase = data.get("phase", "")
+                        if stream == "lifecycle" and phase == "error":
+                            trace["status"] = "error"
+                            trace["error"] = data.get("error", "agent lifecycle error")
+                            return
+                        elif stream == "lifecycle" and phase in ("end", "complete", "done"):
+                            trace["status"] = "complete"
+                            return
+                        elif (stream == "lifecycle" and phase == "fallback_step"
+                              and data.get("fallbackStepFinalOutcome") == "chain_exhausted"):
+                            trace["status"] = "error"
+                            trace["error"] = data.get("fallbackStepFromFailureDetail", "model fallback exhausted")
+                            return
+
             try:
                 await asyncio.wait_for(recv_loop(), timeout=TIMEOUT_SECONDS)
             except asyncio.TimeoutError:
