@@ -40,11 +40,14 @@ def _run_prompt(prompt: str) -> str:
     return result.stdout.strip()
 
 
-def _export_tool_calls() -> list[dict]:
-    """Export the last Hermes session and parse tool call entries."""
+def _export_tool_calls(run_start_ts: float) -> list[dict]:
+    """Export the last Hermes session to a temp file and parse tool call entries."""
+    import tempfile, os
+    tmp = tempfile.NamedTemporaryFile(suffix=".jsonl", delete=False)
+    tmp.close()
     try:
         result = subprocess.run(
-            [HERMES_CMD, "sessions", "export", "--last"],
+            [HERMES_CMD, "sessions", "export", tmp.name],
             capture_output=True,
             text=True,
             timeout=30,
@@ -52,14 +55,19 @@ def _export_tool_calls() -> list[dict]:
         if result.returncode != 0:
             logger.warning("hermes sessions export failed: %s", result.stderr[:200])
             return []
+        with open(tmp.name) as f:
+            lines = f.readlines()
     except Exception as exc:
         logger.warning("Could not export session: %s", exc)
         return []
+    finally:
+        os.unlink(tmp.name)
 
+    # Filter to entries from this run (after run_start_ts)
     tool_calls: list[dict] = []
     pending: dict | None = None
 
-    for line in result.stdout.splitlines():
+    for line in lines:
         line = line.strip()
         if not line:
             continue
@@ -109,12 +117,12 @@ def run_hermes_session(topic: str, prompt: str) -> dict[str, Any]:
     try:
         trace["final_response"] = _run_prompt(prompt)
         trace["status"] = "complete"
-        trace["tool_calls"] = _export_tool_calls()
+        trace["tool_calls"] = _export_tool_calls(wall_start)
 
     except subprocess.TimeoutExpired:
         logger.warning("Hermes session timed out after %ss", TIMEOUT_SECONDS)
         trace["status"] = "timeout"
-        trace["tool_calls"] = _export_tool_calls()
+        trace["tool_calls"] = _export_tool_calls(wall_start)
 
     except FileNotFoundError:
         trace["error"] = f"hermes command not found — is Hermes Agent installed? (looked for: {HERMES_CMD})"
