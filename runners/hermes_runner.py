@@ -40,62 +40,87 @@ def _run_prompt(prompt: str) -> str:
     return result.stdout.strip()
 
 
-def _export_tool_calls(run_start_ts: float) -> list[dict]:
-    """Export the last Hermes session to a temp file and parse tool call entries."""
-    import tempfile, os
+def _export_session(run_start_ts: float) -> tuple[list[dict], dict]:
+    """Export Hermes sessions, find the one matching this run, return (tool_calls, tokens)."""
+    import os, tempfile
     tmp = tempfile.NamedTemporaryFile(suffix=".jsonl", delete=False)
     tmp.close()
     try:
         result = subprocess.run(
             [HERMES_CMD, "sessions", "export", tmp.name],
-            capture_output=True,
-            text=True,
-            timeout=30,
+            capture_output=True, text=True, timeout=30,
         )
         if result.returncode != 0:
             logger.warning("hermes sessions export failed: %s", result.stderr[:200])
-            return []
+            return [], {}
         with open(tmp.name) as f:
             lines = f.readlines()
     except Exception as exc:
         logger.warning("Could not export session: %s", exc)
-        return []
+        return [], {}
     finally:
         os.unlink(tmp.name)
 
-    # Filter to entries from this run (after run_start_ts)
-    tool_calls: list[dict] = []
-    pending: dict | None = None
-
+    # Find the session that started closest to (and after) run_start_ts
+    best: dict | None = None
     for line in lines:
         line = line.strip()
         if not line:
             continue
         try:
-            entry = json.loads(line)
+            session = json.loads(line)
         except json.JSONDecodeError:
             continue
+        started = session.get("started_at", "")
+        if started and started >= _ts_to_iso(run_start_ts):
+            if best is None or session["started_at"] > best["started_at"]:
+                best = session
 
-        etype = entry.get("type", entry.get("role", ""))
+    if best is None:
+        return [], {}
 
-        if etype in ("tool_use", "tool_call"):
-            pending = {
-                "name": entry.get("name", entry.get("tool", "")),
-                "args": entry.get("input", entry.get("arguments", {})),
-                "result": None,
-                "timestamp": entry.get("timestamp", _now()),
-                "duration_seconds": round(entry.get("duration_ms", 0) / 1000, 3),
-            }
-            tool_calls.append(pending)
+    tokens = {
+        "input": best.get("input_tokens", 0) or 0,
+        "output": best.get("output_tokens", 0) or 0,
+    }
 
-        elif etype in ("tool_result", "tool_response") and pending is not None:
-            content = entry.get("content", entry.get("output", ""))
+    # Parse tool calls from messages
+    tool_calls: list[dict] = []
+    messages = best.get("messages", [])
+    tool_result_map: dict[str, str] = {}
+
+    for msg in messages:
+        if msg.get("role") == "tool":
+            content = msg.get("content", "")
             if isinstance(content, list):
                 content = " ".join(c.get("text", "") for c in content if isinstance(c, dict))
-            pending["result"] = content
-            pending = None
+            call_id = msg.get("tool_call_id", "")
+            if call_id:
+                tool_result_map[call_id] = content
 
-    return tool_calls
+    for msg in messages:
+        if msg.get("role") != "assistant":
+            continue
+        for tc in msg.get("tool_calls", []):
+            fn = tc.get("function", {})
+            call_id = tc.get("id", tc.get("call_id", ""))
+            try:
+                args = json.loads(fn.get("arguments", "{}"))
+            except json.JSONDecodeError:
+                args = {}
+            tool_calls.append({
+                "name": fn.get("name", ""),
+                "args": args,
+                "result": tool_result_map.get(call_id),
+                "timestamp": _now(),
+                "duration_seconds": None,
+            })
+
+    return tool_calls, tokens
+
+
+def _ts_to_iso(ts: float) -> str:
+    return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
 
 
 def run_hermes_session(topic: str, prompt: str) -> dict[str, Any]:
@@ -117,12 +142,16 @@ def run_hermes_session(topic: str, prompt: str) -> dict[str, Any]:
     try:
         trace["final_response"] = _run_prompt(prompt)
         trace["status"] = "complete"
-        trace["tool_calls"] = _export_tool_calls(wall_start)
+        tool_calls, tokens = _export_session(wall_start)
+        trace["tool_calls"] = tool_calls
+        trace["tokens"] = tokens
 
     except subprocess.TimeoutExpired:
         logger.warning("Hermes session timed out after %ss", TIMEOUT_SECONDS)
         trace["status"] = "timeout"
-        trace["tool_calls"] = _export_tool_calls(wall_start)
+        tool_calls, tokens = _export_session(wall_start)
+        trace["tool_calls"] = tool_calls
+        trace["tokens"] = tokens
 
     except FileNotFoundError:
         trace["error"] = f"hermes command not found — is Hermes Agent installed? (looked for: {HERMES_CMD})"
