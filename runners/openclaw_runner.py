@@ -156,6 +156,7 @@ async def _run_async(topic: str, prompt: str) -> dict[str, Any]:
 
             # --- event loop -----------------------------------------------
             tool_call_buffer: dict[str, dict] = {}
+            item_start_ts: dict[str, int] = {}  # itemId → start ts (ms)
 
             async def recv_loop():
                 async for raw in ws:
@@ -223,10 +224,29 @@ async def _run_async(topic: str, prompt: str) -> dict[str, Any]:
                         return
 
                     elif etype == "agent":
-                        data = event.get("payload", {}).get("data", {})
-                        stream = event.get("payload", {}).get("stream", "")
+                        payload = event.get("payload", {})
+                        data = payload.get("data", {})
+                        stream = payload.get("stream", "")
                         phase = data.get("phase", "")
-                        if stream == "lifecycle" and phase == "error":
+                        ts_ms = payload.get("ts", 0)
+
+                        if stream == "item" and phase == "start" and data.get("kind") in ("tool", "search", "command"):
+                            item_id = data.get("itemId", "")
+                            item_start_ts[item_id] = ts_ms
+
+                        elif stream == "item" and phase == "end" and data.get("kind") in ("tool", "search", "command"):
+                            item_id = data.get("itemId", "")
+                            start_ms = item_start_ts.pop(item_id, ts_ms)
+                            duration = round((ts_ms - start_ms) / 1000, 3) if ts_ms and start_ms else None
+                            trace["tool_calls"].append({
+                                "name": data.get("name", ""),
+                                "args": {"meta": data.get("meta", "")},
+                                "result": None,
+                                "timestamp": _now(),
+                                "duration_seconds": duration,
+                            })
+
+                        elif stream == "lifecycle" and phase == "error":
                             trace["status"] = "error"
                             trace["error"] = data.get("error", "agent lifecycle error")
                             return
