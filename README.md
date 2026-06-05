@@ -1,6 +1,42 @@
 # Agent Benchmark
 
-A head-to-head benchmark that runs the same multi-source research task through two AI agents — **OpenClaw** and **Hermes Agent** — and compares them on tool usage, token consumption, latency, and output quality. Each agent is asked to produce a structured briefing on a topic using ArXiv, GitHub, and web search tools. Results are saved as JSON traces and visualised in a local Flask dashboard.
+A head-to-head benchmark that runs the same multi-source research task through two AI agents - **OpenClaw** and **Hermes Agent** - and compares them on tool usage, token consumption, latency, and output quality. Each agent is asked to produce a structured briefing on a topic using ArXiv, GitHub, and web search tools. Results are saved as JSON traces and visualised in a local Flask dashboard.
+
+---
+
+## Architecture
+
+```
+Benchmark Prompt
+      |
+      +-----------> OpenClaw Runner (runners/openclaw_runner.py)
+      |                   |
+      |                   +-- WebSocket --> OpenClaw Gateway :18789
+      |                   |                      |
+      |                   |                Codex Plugin --> GPT-5.5
+      |                   |                      |
+      |                   +<-- agent events (tool calls, response, lifecycle)
+      |                   +-- trajectory.jsonl --> token counts
+      |
+      +-----------> Hermes Runner (runners/hermes_runner.py)
+                         |
+                         +-- subprocess: hermes -z "prompt" --> GPT-5.5
+                         +-- hermes sessions export --> tool calls, tokens
+      |
+      v
+  benchmark.py: normalize_trace()
+      |
+      +-- results/openclaw_trace.json
+      +-- results/hermes_trace.json
+      |
+      v
+  dashboard/app.py  (Flask :5000)
+      |
+      +-- Metrics table      (tool calls, tokens, wall clock, status)
+      +-- Tool call timelines (per agent, expandable args + result preview)
+      +-- Output sections    (Papers / Repos / Web, side by side)
+      +-- Synthesis          (both paragraphs side by side)
+```
 
 ---
 
@@ -11,9 +47,9 @@ A head-to-head benchmark that runs the same multi-source research task through t
 | Python | 3.11+ | On the VPS and Mac |
 | Node.js | 20+ | Required by OpenClaw |
 | VPS | Ubuntu 22.04+ | 4 GB RAM minimum; tested on Hetzner 8 GB |
-| OpenAI API key | — | Used by both agents (gpt-5.5) |
-| Brave Search API key | — | Used by the `web_search` tool |
-| GitHub token | — | Optional; increases rate limit for `github_search` |
+| OpenAI API key | - | Used by both agents (gpt-5.5) |
+| Brave Search API key | - | Used by the `web_search` tool |
+| GitHub token | - | Optional; increases rate limit for `github_search` |
 
 ---
 
@@ -116,8 +152,8 @@ After both agents complete, the benchmark prints a comparison table:
 
 Two files are written to `results/`:
 
-- `openclaw_trace.json` — full trace including tool call timeline, response, and parsed output sections
-- `hermes_trace.json` — same schema for Hermes
+- `openclaw_trace.json` - full trace including tool call timeline, response, and parsed output sections
+- `hermes_trace.json` - same schema for Hermes
 
 Each trace follows this schema:
 
@@ -140,9 +176,9 @@ Each trace follows this schema:
     }
   ],
   "output": {
-    "papers": ["1. Some Paper — summary (arxiv.org/...)"],
-    "repos": ["1. org/repo — description"],
-    "web": ["1. Article — source — summary"],
+    "papers": ["1. Some Paper - summary (arxiv.org/...)"],
+    "repos": ["1. org/repo - description"],
+    "web": ["1. Article - source - summary"],
     "synthesis": "..."
   },
   "raw_response": "..."
@@ -153,16 +189,16 @@ Each trace follows this schema:
 
 The Flask dashboard at `http://localhost:5000` shows:
 
-- **Metrics table** — tool calls, tokens, wall clock, output counts, status side by side
-- **Tool call timelines** — each call with sequence number, name, expandable args and result preview, duration
-- **Output sections** — Papers, Repos, Web results side by side per agent
-- **Synthesis comparison** — both synthesis paragraphs side by side for easy diff
+- **Metrics table** - tool calls, tokens, wall clock, output counts, status side by side
+- **Tool call timelines** - each call with sequence number, name, expandable args and result preview, duration
+- **Output sections** - Papers, Repos, Web results side by side per agent
+- **Synthesis comparison** - both synthesis paragraphs side by side for easy diff
 
 ---
 
 ## Results
 
-*Benchmark topic: "AI agent frameworks 2026" — run 2026-06-05 on Hetzner VPS (Ubuntu 22.04, 8 GB RAM)*
+*Benchmark topic: "AI agent frameworks 2026" - run 2026-06-05 on Hetzner VPS (Ubuntu 22.04, 8 GB RAM)*
 
 | Metric | OpenClaw | Hermes |
 |--------|---------|--------|
@@ -180,10 +216,10 @@ The Flask dashboard at `http://localhost:5000` shows:
 ## Lessons
 
 **OpenClaw is 2× faster and uses 3× fewer tokens for identical output quality.**
-Both agents returned 5 papers, 3 repos, and 3 web results — the structured output was equivalent. But OpenClaw reached that result in 4 tool calls versus Hermes's 24.
+Both agents returned 5 papers, 3 repos, and 3 web results - the structured output was equivalent. But OpenClaw reached that result in 4 tool calls versus Hermes's 24.
 
 **OpenClaw uses code to orchestrate; Hermes uses agent scaffolding.**
-OpenClaw's Codex plugin wrote and ran a Python script (1 `bash` call) to perform all searches, then used `web_search` for additional results. Hermes spent several turns calling `skill_view` and `skills_list` — introspective meta-calls to understand its own capabilities — before doing any research.
+OpenClaw's Codex plugin wrote and ran a Python script (1 `bash` call) to perform all searches, then used `web_search` for additional results. Hermes spent several turns calling `skill_view` and `skills_list` - introspective meta-calls to understand its own capabilities - before doing any research.
 
 **Hermes uses its own built-in tools, not the registered MCP server.**
 Despite registering a custom MCP server with `arxiv_search` and `github_search`, Hermes fell back to its own `web_search` tool for everything. The MCP server connection failed during setup (Hermes reported it couldn't verify the server). In a controlled experiment both agents should use the same tools.
